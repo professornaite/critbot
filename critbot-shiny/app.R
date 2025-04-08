@@ -4,7 +4,7 @@ library(dplyr)
 library(here)
 
 ui <- fluidPage(
-  titlePanel("CritBot Word Query"),
+  titlePanel("CritBot Word Query (static version)"),
   sidebarLayout(
     sidebarPanel(
       textInput("word", "Enter a word to query:"),
