@@ -32,9 +32,13 @@ server <- function(input, output, session) {
   )
   
   # Load critical words dataset
+  critical_words_path <- here("data", "critical_words_dataset.csv")
   critical_words_df <- tryCatch({
-    read.csv(here("data", "critical_words_dataset.csv"), 
-             stringsAsFactors = FALSE)
+    if (file.exists(critical_words_path)) {
+      read.csv(critical_words_path, stringsAsFactors = FALSE)
+    } else {
+      data.frame(Keyword = character(), Definition = character())
+    }
   }, error = function(e) {
     showNotification("Critical dataset not found! Contact administrator.", 
                      type = "error")
@@ -50,11 +54,8 @@ server <- function(input, output, session) {
     rv$show_agreement <- FALSE
     rv$show_add_word <- FALSE
     rv$show_next_steps <- FALSE
-    updateRadioButtons(session, "agreement", selected = character(0))
-    updateTextInput(session, "new_definition", value = "")
-    updateTextInput(session, "new_word_definition", value = "")
     
-    if(nchar(word) > 0) {
+    if (nchar(word) > 0) {
       found_word <- critical_words_df %>%
         filter(tolower(Keyword) == word)
       
@@ -135,18 +136,15 @@ server <- function(input, output, session) {
     rv$show_agreement <- FALSE
     rv$show_add_word <- FALSE
     rv$show_next_steps <- FALSE
-    updateTextInput(session, "word", placeholder = "Enter a new word to query")
   })
   
-  # Handle related terms search
+  # Handle related terms search (placeholder for future implementation)
   observeEvent(input$related_terms, {
     req(rv$current_word)
     showNotification("Related terms feature coming soon!", type = "message")
-    # Placeholder for future implementation
-    # You could add semantic analysis or pre-defined relationships here
   })
   
-  # New UI for adding words
+  # New UI for adding words with appending logic for dataset updates
   output$add_word_ui <- renderUI({
     if (rv$show_add_word) {
       tagList(
@@ -158,7 +156,7 @@ server <- function(input, output, session) {
     }
   })
   
-  # Handle new word submission
+  # Handle new word submission with appending logic for dataset updates
   observeEvent(input$submit_new_word, {
     req(input$new_word_definition)
     
@@ -169,70 +167,28 @@ server <- function(input, output, session) {
     )
     
     tryCatch({
-      # Add to main dataset
-      critical_words_df <<- bind_rows(critical_words_df, new_entry)
-      write.csv(critical_words_df, here("data", "critical_words_dataset.csv"),
-                row.names = FALSE)
-      
-      # Also add to alternatives
-      alt_entry <- data.frame(
-        Word = rv$current_word,
-        Alternative_Definition = trimws(input$new_word_definition),
-        Timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
-        stringsAsFactors = FALSE
-      )
-      
-      output_path <- here("data", "alternative_definitions.csv")
-      if (!file.exists(output_path)) {
-        write.csv(alt_entry, file = output_path, row.names = FALSE)
-      } else {
-        existing <- read.csv(output_path)
-        if(!any(existing$Alternative_Definition == alt_entry$Alternative_Definition)) {
-          write.table(alt_entry, file = output_path, sep = ",",
-                      col.names = FALSE, row.names = FALSE, append = TRUE)
-        }
-      }
+      # Append new entry to the dataset file without overwriting existing data
+      write.table(new_entry, file = critical_words_path, sep = ",",
+                  col.names = !file.exists(critical_words_path), row.names = FALSE,
+                  append = TRUE)
       
       showNotification("New word added successfully!", type = "message")
-      rv$definition <- input$new_word_definition
-      rv$show_add_word <- FALSE
-      rv$show_agreement <- TRUE
+      
+      # Update reactive values for UI state management after adding the new word
+      critical_words_df <<- bind_rows(critical_words_df, new_entry)
+      
+      rv$current_word <- NULL
+      
       updateTextInput(session, "new_word_definition", value = "")
+      
+      rv$show_add_word <- FALSE
+      
     }, error = function(e) {
-      showNotification("Failed to add new word. Please try again.", type = "error")
-    })
-  })
-  
-  # Existing alternative definition submission
-  observeEvent(input$submit_new, {
-    req(input$new_definition)
-    
-    new_entry <- data.frame(
-      Word = rv$current_word,
-      Alternative_Definition = trimws(input$new_definition),
-      Timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
-      stringsAsFactors = FALSE
-    )
-    
-    output_path <- here("data", "alternative_definitions.csv")
-    
-    tryCatch({
-      if (!file.exists(output_path)) {
-        write.csv(new_entry, file = output_path, row.names = FALSE)
-      } else {
-        existing <- read.csv(output_path)
-        if(!any(existing$Alternative_Definition == new_entry$Alternative_Definition)) {
-          write.table(new_entry, file = output_path, sep = ",",
-                      col.names = FALSE, row.names = FALSE, append = TRUE)
-        }
-      }
-      showNotification("Definition saved successfully!", type = "message")
-      updateTextInput(session, "new_definition", value = "")
-    }, error = function(e) {
-      showNotification("Failed to save definition. Please try again.", type = "error")
+      showNotification(paste("Failed to add new word:", e$message), type = "error")
     })
   })
 }
 
 shinyApp(ui, server)
+
 
