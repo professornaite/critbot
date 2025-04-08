@@ -35,7 +35,10 @@ server <- function(input, output, session) {
   critical_words_path <- here("data", "critical_words_dataset.csv")
   critical_words_df <- tryCatch({
     if (file.exists(critical_words_path)) {
-      read.csv(critical_words_path, stringsAsFactors = FALSE)
+      # Read the CSV, select only Keyword and Definition columns
+      df <- read.csv(critical_words_path, stringsAsFactors = FALSE) %>%
+        select(Keyword, Definition)
+      df
     } else {
       data.frame(Keyword = character(), Definition = character())
     }
@@ -190,5 +193,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
-
 
