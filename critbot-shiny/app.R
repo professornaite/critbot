@@ -1,10 +1,9 @@
-# critbot-shiny/app.R
 library(shiny)
 library(dplyr)
 library(here)
 
 ui <- fluidPage(
-  titlePanel("CritBot Word Query (static version)"),
+  titlePanel("CritBot Word Query"),
   sidebarLayout(
     sidebarPanel(
       textInput("word", "Enter a word to query:"),
@@ -15,8 +14,8 @@ ui <- fluidPage(
     mainPanel(
       textOutput("result"),
       uiOutput("agreement_ui"),
-      uiOutput("add_word_ui"),
-      uiOutput("next_steps_ui")  # New UI element for next steps
+      htmlOutput("suggestion_prompt"),
+      uiOutput("next_steps_ui")
     )
   )
 )
@@ -27,8 +26,9 @@ server <- function(input, output, session) {
     current_word = NULL,
     definition = NULL,
     show_agreement = FALSE,
-    show_add_word = FALSE,
-    show_next_steps = FALSE
+    show_next_steps = FALSE,
+    suggestion = "",
+    agreement_choice = NULL
   )
   
   # Load critical words dataset
@@ -40,10 +40,12 @@ server <- function(input, output, session) {
         select(Keyword, Definition)
       df
     } else {
+      showNotification("Critical dataset not found! Contact administrator.",
+                       type = "error")
       data.frame(Keyword = character(), Definition = character())
     }
   }, error = function(e) {
-    showNotification("Critical dataset not found! Contact administrator.", 
+    showNotification(paste("Error reading dataset:", e$message),
                      type = "error")
     data.frame(Keyword = character(), Definition = character())
   })
@@ -55,8 +57,9 @@ server <- function(input, output, session) {
     
     # Reset UI state
     rv$show_agreement <- FALSE
-    rv$show_add_word <- FALSE
     rv$show_next_steps <- FALSE
+    rv$suggestion <- ""
+    rv$agreement_choice <- NULL
     
     if (nchar(word) > 0) {
       found_word <- critical_words_df %>%
@@ -69,7 +72,7 @@ server <- function(input, output, session) {
       } else {
         rv$current_word <- word
         rv$definition <- NULL
-        rv$show_add_word <- TRUE
+        rv$show_agreement <- FALSE # Ensure agreement UI doesn't show for not found words
       }
     }
   })
@@ -80,8 +83,9 @@ server <- function(input, output, session) {
     rv$current_word <- NULL
     rv$definition <- NULL
     rv$show_agreement <- FALSE
-    rv$show_add_word <- FALSE
     rv$show_next_steps <- FALSE
+    rv$suggestion <- ""
+    rv$agreement_choice <- NULL
   })
   
   # Display main result
@@ -92,7 +96,7 @@ server <- function(input, output, session) {
     if (!is.null(rv$definition)) {
       return(paste("Definition:", rv$definition))
     }
-    "Word not found in the database."
+    "Word not found in the database. Please provide a suggestion below:"  # Update the message
   })
   
   # Agreement UI elements
@@ -103,11 +107,74 @@ server <- function(input, output, session) {
                      choices = c("Yes", "No"), selected = character(0)),
         conditionalPanel(
           condition = "input.agreement == 'No'",
-          textInput("new_definition", "Enter your alternative definition:"),
-          actionButton("submit_new", "Submit Alternative Definition")
+          textAreaInput("suggestion_text", "Enter your alternative definition:", rows = 3, placeholder = "Enter suggestion here"),
+          uiOutput("send_suggestion_button")
         )
       )
+    } else if (!is.null(rv$current_word) && is.null(rv$definition)) {  # New condition for not found words
+      tagList(
+        textAreaInput("suggestion_text", "Enter a suggested definition:", rows = 3, placeholder = "Enter suggestion here"),
+        uiOutput("send_suggestion_button")
+      )
+    } else {
+      NULL
     }
+  })
+  
+  # Dynamic button rendering
+  output$send_suggestion_button <- renderUI({
+    if (!is.null(input$suggestion_text) && input$suggestion_text != "") {
+      actionButton("send_suggestion", "Send Suggestion")
+    } else {
+      NULL
+    }
+  })
+  
+  # Observe agreement choice
+  observeEvent(input$agreement, {
+    rv$agreement_choice <- input$agreement
+    if (input$agreement == "Yes") {
+      rv$show_next_steps <- TRUE
+    } else {
+      rv$show_next_steps <- FALSE
+    }
+  })
+  
+  # Observe suggestion text
+  observeEvent(input$suggestion_text, {
+    rv$suggestion <- input$suggestion_text
+  })
+  
+  # Suggestion prompt (Email)
+  output$suggestion_prompt <- renderUI({
+    NULL
+  })
+  
+  # Handle "Send Suggestion" button click
+  observeEvent(input$send_suggestion, {
+    req(input$suggestion_text) # Ensure suggestion is provided
+    
+    if (!is.null(rv$current_word)) {  # Always true, but kept for safety
+      # Construct the mailto link
+      email_content <- paste0(
+        "mailto:quantshopusers@gmail.com",
+        "?subject=", URLencode(ifelse(is.null(rv$definition), paste("New Word Suggestion - ", rv$current_word), paste("Suggestion for CritBot - ", rv$current_word))),  # Dynamic Subject
+        "&body=", URLencode(paste0(
+          ifelse(is.null(rv$definition), "Hi there. Please add this word to your database:\n\n", "Hi there. I believe the definition for this term should be as follows:\n\n"),  # Dynamic Body Intro
+          input$suggestion_text, "\n\n",
+          "Thank you!"
+        ))
+      )
+      
+      # Create the HTML link for the user to click
+      output$suggestion_prompt <- renderUI({
+        HTML(paste(
+          "Send us an email with your suggestion pre-filled:",
+          "<a href='", email_content, "'>Open Email</a>"
+        ))
+      })
+    }
+    rv$show_next_steps <- TRUE # only shows after a button is clicked.
   })
   
   # Next steps UI after agreement
@@ -121,76 +188,24 @@ server <- function(input, output, session) {
     }
   })
   
-  # Handle agreement selection
-  observeEvent(input$agreement, {
-    req(input$agreement)
-    if (input$agreement == "Yes") {
-      rv$show_next_steps <- TRUE
-    } else {
-      rv$show_next_steps <- FALSE
-    }
-  })
-  
   # Handle new search
   observeEvent(input$new_search, {
     updateTextInput(session, "word", value = "")
     rv$current_word <- NULL
     rv$definition <- NULL
     rv$show_agreement <- FALSE
-    rv$show_add_word <- FALSE
     rv$show_next_steps <- FALSE
+    rv$suggestion <- ""
+    rv$agreement_choice <- NULL
   })
   
-  # Handle related terms search (placeholder for future implementation)
+  # Handle related terms search
   observeEvent(input$related_terms, {
     req(rv$current_word)
     showNotification("Related terms feature coming soon!", type = "message")
   })
-  
-  # New UI for adding words with appending logic for dataset updates
-  output$add_word_ui <- renderUI({
-    if (rv$show_add_word) {
-      tagList(
-        h4("Word not found. Would you like to add it to our database?"),
-        textAreaInput("new_word_definition", "Enter your definition:",
-                      rows = 3, resize = "vertical"),
-        actionButton("submit_new_word", "Add New Word")
-      )
-    }
-  })
-  
-  # Handle new word submission with appending logic for dataset updates
-  observeEvent(input$submit_new_word, {
-    req(input$new_word_definition)
-    
-    new_entry <- data.frame(
-      Keyword = rv$current_word,
-      Definition = trimws(input$new_word_definition),
-      stringsAsFactors = FALSE
-    )
-    
-    tryCatch({
-      # Append new entry to the dataset file without overwriting existing data
-      write.table(new_entry, file = critical_words_path, sep = ",",
-                  col.names = !file.exists(critical_words_path), row.names = FALSE,
-                  append = TRUE)
-      
-      showNotification("New word added successfully!", type = "message")
-      
-      # Update reactive values for UI state management after adding the new word
-      critical_words_df <<- bind_rows(critical_words_df, new_entry)
-      
-      rv$current_word <- NULL
-      
-      updateTextInput(session, "new_word_definition", value = "")
-      
-      rv$show_add_word <- FALSE
-      
-    }, error = function(e) {
-      showNotification(paste("Failed to add new word:", e$message), type = "error")
-    })
-  })
 }
 
 shinyApp(ui, server)
+
 
