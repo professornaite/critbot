@@ -1,3 +1,5 @@
 reminder: instructions on building shiny app after changes.
 
 see code, "add-shiny-to-web.R"
+
+You may need to delete the shinylive folder and js file when you return the contents of add-shiny-to-web.
