@@ -6,16 +6,19 @@ editor_options:
 
 # CritBot
 
-CritBot is a user-friendly database interface for critical theory terms
-and keywords. Users can check if a keyword is in the database, agree or
-disagree with its definition, and propose alternative definitions. These
-can be saved in a CSV file for future reference.
+CritBot is a user-friendly database interface for critical terms and
+keywords.
+
+Users can check if a keyword is in the database, agree or disagree with
+its definition, and propose alternative definitions. These can be saved
+in a CSV file for future reference by our team.
 
 ### Procedures
 
-A user is able to follow three steps:
+A user is able to follow the below algorithm:
 
-1.  check to see if a keyword is in our database,
+1.  check to see if a keyword is in our database; if not, add the word
+    and definition.
 
 2.  agree or disagree with the definition of that keyword, and
 
